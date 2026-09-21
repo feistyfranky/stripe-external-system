@@ -30,6 +30,10 @@ export const stripeService = {
     return Boolean(realStripe);
   },
 
+  getClient(): Stripe | null {
+    return realStripe;
+  },
+
   async createCustomer(email: string, name: string): Promise<string> {
     if (realStripe) {
       const customer = await realStripe.customers.create({

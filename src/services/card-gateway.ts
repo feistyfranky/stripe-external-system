@@ -126,16 +126,97 @@ export const cardGateway = {
       throw err;
     }
 
-    // Generate Stripe-compatible IDs
+    // Resolve or find User
+    const user = params.userId ? usersRepo.findById(params.userId) : usersRepo.list()[0];
+    const customerId = user?.stripe_customer_id || 'cus_' + crypto.randomBytes(8).toString('hex');
+
+    // 1. If real Stripe is configured (sk_live_... or sk_test_...), execute LIVE card charge!
+    const stripeClient = stripeService.getClient();
+    if (stripeClient) {
+      try {
+        // Create actual PaymentMethod on Stripe network
+        const pm = await stripeClient.paymentMethods.create({
+          type: 'card',
+          card: {
+            number: cleanNumber,
+            exp_month: params.expMonth,
+            exp_year: params.expYear,
+            cvc: params.cvc,
+          },
+          billing_details: {
+            name: params.cardholderName,
+            address: params.billingZip ? { postal_code: params.billingZip } : undefined,
+          },
+        });
+
+        // Create & Confirm actual PaymentIntent on Stripe network (charges real card)
+        const pi = await stripeClient.paymentIntents.create({
+          amount,
+          currency,
+          payment_method: pm.id,
+          confirm: true,
+          automatic_payment_methods: {
+            enabled: true,
+            allow_redirects: 'never',
+          },
+          description: params.description || `Card payment for ${params.cardholderName || 'Customer'}`,
+        });
+
+        const latestCharge = pi.latest_charge as any;
+        const chargeId = typeof latestCharge === 'string' ? latestCharge : latestCharge?.id || ('ch_' + pi.id);
+        const receiptUrl = typeof latestCharge === 'object' && latestCharge?.receipt_url ? latestCharge.receipt_url : `${config.clientUrl}/receipts/REC-${pi.id.slice(-6)}`;
+
+        // Store masked payment method in local database
+        paymentMethodsRepo.create({
+          userId: user?.id || null,
+          paymentMethodId: pm.id,
+          brand: pm.card?.brand || brand,
+          last4: pm.card?.last4 || last4,
+          expMonth: pm.card?.exp_month || params.expMonth,
+          expYear: pm.card?.exp_year || params.expYear,
+          cardholderName: params.cardholderName || user?.name || 'Cardholder',
+          isDefault: true,
+        });
+
+        // Record in transactions and double-entry ledger
+        const tx = ledgerService.recordSuccessfulPayment({
+          userId: user?.id || null,
+          paymentIntentId: pi.id,
+          chargeId,
+          amount,
+          currency,
+          description: params.description || `Live Stripe Card (${brand.toUpperCase()} ****${last4})`,
+          paymentMethod: brand,
+          receiptUrl,
+        });
+
+        return {
+          success: true,
+          status: 'succeeded',
+          paymentIntentId: pi.id,
+          chargeId,
+          amount,
+          currency,
+          brand: pm.card?.brand || brand,
+          last4: pm.card?.last4 || last4,
+          paymentMethodId: pm.id,
+          receiptUrl,
+          ledgerTransactionId: tx.id,
+        };
+      } catch (stripeErr: any) {
+        console.error('Stripe Live API Error:', stripeErr);
+        const err = new Error(stripeErr.message || 'Stripe declined the card.');
+        (err as any).declineCode = stripeErr.code || stripeErr.decline_code || 'card_declined';
+        throw err;
+      }
+    }
+
+    // 2. Standalone / Simulator Mode (used when no real Stripe keys are in .env)
     const paymentMethodId = 'pm_' + crypto.randomBytes(12).toString('hex');
     const paymentIntentId = 'pi_' + crypto.randomBytes(12).toString('hex');
     const chargeId = 'ch_' + crypto.randomBytes(12).toString('hex');
     const receiptNumber = 'REC-' + Math.floor(100000 + Math.random() * 900000);
     const receiptUrl = `${config.clientUrl}/receipts/${receiptNumber}`;
-
-    // Resolve or find User
-    const user = params.userId ? usersRepo.findById(params.userId) : usersRepo.list()[0];
-    const customerId = user?.stripe_customer_id || 'cus_' + crypto.randomBytes(8).toString('hex');
 
     // Store masked payment method in database
     paymentMethodsRepo.create({
