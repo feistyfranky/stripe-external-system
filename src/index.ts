@@ -39,10 +39,14 @@ app.use('/api/payments', paymentsRouter);
 
 // 6. Health & Status endpoint
 app.get('/api/health', (req, res) => {
+  const isLive = config.stripeSecretKey.startsWith('sk_live_');
+  const isTest = config.stripeSecretKey.startsWith('sk_test_');
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-    stripeMode: config.isStripeConfigured ? 'live_or_test_keys' : 'simulation_sandbox',
+    stripeMode: isLive ? 'live' : isTest ? 'test' : 'simulation',
+    isLive,
+    isTest,
     simulatorEnabled: config.simulatorEnabled,
   });
 });

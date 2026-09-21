@@ -7,8 +7,11 @@ import { config } from '../config';
 export const checkoutRouter = Router();
 
 const checkoutSchema = z.object({
-  priceId: z.string().min(1, 'priceId is required'),
-  userId: z.string().min(1, 'userId is required'),
+  priceId: z.string().optional(),
+  userId: z.string().optional(),
+  amount: z.number().positive().optional(),
+  currency: z.string().optional().default('usd'),
+  productName: z.string().optional(),
   successUrl: z.string().optional(),
   cancelUrl: z.string().optional(),
 });
@@ -20,28 +23,26 @@ checkoutRouter.post('/create-session', async (req: Request, res: Response): Prom
     return;
   }
 
-  const { priceId, userId, successUrl, cancelUrl } = parseResult.data;
+  const { priceId, userId, amount, currency, productName, successUrl, cancelUrl } = parseResult.data;
 
-  // Validate user exists
-  const user = usersRepo.findById(userId);
-  if (!user) {
-    res.status(404).json({ error: `User with id ${userId} not found` });
-    return;
-  }
+  // Resolve user
+  const user = userId ? usersRepo.findById(userId) : usersRepo.list()[0];
 
-  // Validate product/price exists
-  const product = productsRepo.findById(priceId);
-  if (!product) {
-    res.status(404).json({ error: `Product/Price ${priceId} not found` });
-    return;
-  }
+  // Resolve product/price if priceId is provided
+  let product = priceId ? productsRepo.findById(priceId) : undefined;
+  const chargeAmount = amount || product?.amount || 4900;
+  const chargeCurrency = currency || product?.currency || 'usd';
+  const name = productName || product?.name || `Payment ($${(chargeAmount / 100).toFixed(2)})`;
 
   try {
     const session = await stripeService.createCheckoutSession({
       priceId,
-      customerId: user.stripe_customer_id || undefined,
-      customerEmail: user.email,
-      userId: user.id,
+      customerId: user?.stripe_customer_id || undefined,
+      customerEmail: user?.email,
+      userId: user?.id || 'usr_default',
+      amount: chargeAmount,
+      currency: chargeCurrency,
+      productName: name,
       successUrl: successUrl || `${config.clientUrl}/?checkout_status=success`,
       cancelUrl: cancelUrl || `${config.clientUrl}/?checkout_status=cancel`,
     });
@@ -51,10 +52,10 @@ checkoutRouter.post('/create-session', async (req: Request, res: Response): Prom
       url: session.url,
       simulated: session.simulated,
       product: {
-        id: product.id,
-        name: product.name,
-        amount: product.amount,
-        currency: product.currency,
+        id: product?.id || 'custom_payment',
+        name,
+        amount: chargeAmount,
+        currency: chargeCurrency,
       },
     });
   } catch (err: any) {

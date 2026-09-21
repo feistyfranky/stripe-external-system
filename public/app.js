@@ -65,8 +65,36 @@ async function loadHealth() {
   try {
     const res = await fetch('/api/health');
     const data = await res.json();
-    document.getElementById('stripe-mode-tag').textContent = 
-      data.stripeMode === 'connected' ? 'Stripe Connected' : 'Simulated Sandbox';
+    const tag = document.getElementById('stripe-mode-tag');
+    const pipeBadge = document.getElementById('pipeline-mode-badge');
+
+    if (data.isLive) {
+      if (tag) {
+        tag.textContent = '🟢 Stripe Live Account';
+        tag.className = 'tag tag-success';
+      }
+      if (pipeBadge) {
+        pipeBadge.textContent = '🟢 Live Stripe Production Rails';
+        pipeBadge.style.background = 'rgba(16, 185, 129, 0.15)';
+        pipeBadge.style.color = '#34d399';
+      }
+    } else if (data.isTest) {
+      if (tag) {
+        tag.textContent = '🟡 Stripe Test Mode';
+        tag.className = 'tag tag-warning';
+      }
+      if (pipeBadge) {
+        pipeBadge.textContent = '🟡 Test API Rails';
+      }
+    } else {
+      if (tag) {
+        tag.textContent = '⚪ Simulation Sandbox';
+        tag.className = 'tag';
+      }
+      if (pipeBadge) {
+        pipeBadge.textContent = 'Active Sandbox / Test Mode';
+      }
+    }
   } catch (err) {
     console.error('Failed to load health:', err);
   }
@@ -831,8 +859,68 @@ if (cardPaymentForm) {
   });
 }
 
+// Live Hosted Checkout Button (Stripe Checkout)
+const btnLiveCheckout = document.getElementById('btn-live-checkout-now');
+if (btnLiveCheckout) {
+  btnLiveCheckout.addEventListener('click', async () => {
+    const amt = parseFloat(document.getElementById('terminal-amount')?.value || '49');
+    const amountInCents = Math.round(amt * 100);
+    const curr = document.getElementById('terminal-currency')?.value || 'usd';
+    const userId = document.getElementById('terminal-user')?.value || '';
+    const cardholder = document.getElementById('card-holder-input')?.value || 'Customer';
+
+    const origText = btnLiveCheckout.innerHTML;
+    btnLiveCheckout.disabled = true;
+    btnLiveCheckout.textContent = 'Generating Stripe Live Checkout Page...';
+
+    try {
+      const res = await fetch('/api/checkout/create-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amountInCents,
+          currency: curr,
+          userId,
+          productName: `Card Payment for ${cardholder}`,
+          successUrl: window.location.origin + '/?checkout_status=success',
+          cancelUrl: window.location.origin + '/?checkout_status=cancel',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to create Checkout session');
+      }
+
+      if (data.url) {
+        showAlert('Opening official Stripe Live Checkout page...', 'info');
+        window.open(data.url, '_blank');
+      } else {
+        throw new Error('No checkout URL returned from Stripe');
+      }
+    } catch (err) {
+      alert(`Stripe Checkout Error: ${err.message}`);
+    } finally {
+      btnLiveCheckout.disabled = false;
+      btnLiveCheckout.innerHTML = origText;
+    }
+  });
+}
+
 function closeReceiptModal() {
   document.getElementById('modal-receipt').classList.add('hidden');
+}
+
+// Check URL parameters for returning from Stripe Checkout
+function checkUrlParameters() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('checkout_status') === 'success') {
+    showAlert('🎉 Stripe Checkout payment completed successfully! Funds recorded.', 'success');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (params.get('checkout_status') === 'cancel') {
+    showAlert('Checkout was canceled.', 'warning');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
 }
 
 // Refresh button
@@ -843,4 +931,5 @@ window.addEventListener('DOMContentLoaded', () => {
   loadHealth();
   refreshAll();
   updateRequestInspector();
+  checkUrlParameters();
 });

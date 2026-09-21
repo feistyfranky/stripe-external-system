@@ -12,12 +12,16 @@ if (config.isStripeConfigured) {
 }
 
 export interface CheckoutSessionParams {
-  priceId: string;
+  priceId?: string;
   customerEmail?: string;
   customerId?: string;
-  userId: string;
+  userId?: string;
   successUrl: string;
   cancelUrl: string;
+  amount?: number; // in cents
+  currency?: string;
+  productName?: string;
+  mode?: 'payment' | 'subscription';
 }
 
 export interface PortalSessionParams {
@@ -52,23 +56,56 @@ export const stripeService = {
 
   async createCheckoutSession(params: CheckoutSessionParams): Promise<{ id: string; url: string; simulated: boolean }> {
     if (realStripe) {
+      const currency = (params.currency || 'usd').toLowerCase();
+      const amount = params.amount || 2900;
+      const isCustomPrice = !params.priceId || params.priceId.startsWith('price_starter') || params.priceId.startsWith('price_pro') || params.priceId.startsWith('price_enterprise');
+
+      const lineItems = isCustomPrice
+        ? [
+            {
+              price_data: {
+                currency,
+                unit_amount: amount,
+                product_data: {
+                  name: params.productName || 'Direct Card Payment',
+                  description: 'Live card payment via Stripe checkout',
+                },
+              },
+              quantity: 1,
+            },
+          ]
+        : [
+            {
+              price: params.priceId!,
+              quantity: 1,
+            },
+          ];
+
+      // Validate customerId so dummy seed IDs don't trigger Stripe 'No such customer' error
+      let validCustomerId: string | undefined = undefined;
+      if (params.customerId && !params.customerId.includes('sim') && !params.customerId.includes('idem') && !params.customerId.includes('seed')) {
+        try {
+          const cust = await realStripe.customers.retrieve(params.customerId);
+          if (!('deleted' in cust && cust.deleted)) {
+            validCustomerId = params.customerId;
+          }
+        } catch {
+          validCustomerId = undefined;
+        }
+      }
+
       const session = await realStripe.checkout.sessions.create({
-        mode: 'subscription',
+        mode: params.mode || (isCustomPrice ? 'payment' : 'subscription'),
         payment_method_types: ['card'],
-        customer: params.customerId,
-        customer_email: params.customerId ? undefined : params.customerEmail,
+        customer: validCustomerId,
+        customer_email: validCustomerId ? undefined : (params.customerEmail || 'alex.mercer@example.com'),
         client_reference_id: params.userId,
-        line_items: [
-          {
-            price: params.priceId,
-            quantity: 1,
-          },
-        ],
-        success_url: params.successUrl + '?session_id={CHECKOUT_SESSION_ID}',
+        line_items: lineItems,
+        success_url: params.successUrl + (params.successUrl.includes('?') ? '&' : '?') + 'session_id={CHECKOUT_SESSION_ID}',
         cancel_url: params.cancelUrl,
         metadata: {
-          userId: params.userId,
-          priceId: params.priceId,
+          userId: params.userId || 'guest_user',
+          priceId: params.priceId || 'custom_payment',
         },
       });
 
@@ -81,7 +118,7 @@ export const stripeService = {
 
     // Simulated Checkout session for immediate local demo/development
     const mockSessionId = 'cs_test_sim_' + crypto.randomBytes(12).toString('hex');
-    const mockUrl = `${config.clientUrl}/?simulated_checkout=true&session_id=${mockSessionId}&user_id=${params.userId}&price_id=${params.priceId}`;
+    const mockUrl = `${config.clientUrl}/?simulated_checkout=true&session_id=${mockSessionId}&user_id=${params.userId || 'usr_default'}&price_id=${params.priceId || 'price_pro'}`;
 
     return {
       id: mockSessionId,

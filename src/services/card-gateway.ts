@@ -132,7 +132,10 @@ export const cardGateway = {
 
     // 1. If real Stripe is configured (sk_live_... or sk_test_...), execute LIVE card charge!
     const stripeClient = stripeService.getClient();
-    if (stripeClient) {
+    const isLiveKey = config.stripeSecretKey.startsWith('sk_live_');
+    const isKnownTestCard = cleanNumber === '4242424242424242' || cleanNumber === '5555555555554444' || cleanNumber === '378282246310005';
+
+    if (stripeClient && !(isLiveKey && isKnownTestCard)) {
       try {
         // Map test card numbers to Stripe's supported test tokens if on test keys
         let cardParam: any = {
@@ -164,17 +167,26 @@ export const cardGateway = {
             },
           });
         } catch (pmErr: any) {
-          // If raw card processing is blocked by Stripe security policy, fall back to safe brand token
+          // If raw card processing is blocked by Stripe security policy:
           if (pmErr.message?.includes('Sending credit card numbers directly to the Stripe API is generally unsafe')) {
-            const tokenBrand = brand === 'mastercard' ? 'tok_mastercard' : brand === 'amex' ? 'tok_amex' : 'tok_visa';
-            pm = await stripeClient.paymentMethods.create({
-              type: 'card',
-              card: { token: tokenBrand },
-              billing_details: {
-                name: params.cardholderName,
-                address: params.billingZip ? { postal_code: params.billingZip } : undefined,
-              },
-            });
+            if (config.stripeSecretKey.startsWith('sk_live_')) {
+              const liveErr = new Error(
+                "Stripe Live Mode restricts direct raw card API calls unless 'Handle card data directly' is enabled under Stripe Settings > Integration (https://dashboard.stripe.com/settings/integration). For immediate PCI-compliant live card processing, click the 'Pay with Live Stripe Checkout' button below!"
+              );
+              (liveErr as any).declineCode = 'stripe_live_pci_restriction';
+              (liveErr as any).checkoutRecommended = true;
+              throw liveErr;
+            } else {
+              const tokenBrand = brand === 'mastercard' ? 'tok_mastercard' : brand === 'amex' ? 'tok_amex' : 'tok_visa';
+              pm = await stripeClient.paymentMethods.create({
+                type: 'card',
+                card: { token: tokenBrand },
+                billing_details: {
+                  name: params.cardholderName,
+                  address: params.billingZip ? { postal_code: params.billingZip } : undefined,
+                },
+              });
+            }
           } else {
             throw pmErr;
           }
