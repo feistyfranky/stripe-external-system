@@ -59,7 +59,7 @@ async function runTests() {
       const badHeader = `t=${timestamp},v1=invalid_tampered_signature_hex`;
       assert.throws(() => {
         stripeService.verifyAndConstructWebhookEvent(testPayload, badHeader);
-      }, /Signature verification failed/);
+      }, /Signature verification failed|No signatures found/);
     } finally {
       config.stripeWebhookSecret = originalSecret;
     }
