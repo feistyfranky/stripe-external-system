@@ -561,6 +561,86 @@ function detectClientBrand(number) {
   return 'CARD';
 }
 
+// --- PIPELINE TRACKER & REQUEST INSPECTOR LOGIC ---
+function setPipelineStep(stepNumber) {
+  for (let i = 1; i <= 5; i++) {
+    const stepEl = document.getElementById(`pipe-step-${i}`);
+    const lineEl = document.getElementById(`pipe-line-${i}`);
+    const circleEl = document.getElementById(`circle-step-${i}`);
+
+    if (stepEl) {
+      stepEl.classList.remove('active', 'completed');
+      if (i < stepNumber) {
+        stepEl.classList.add('completed');
+        if (circleEl) circleEl.innerHTML = '&#10003;';
+      } else if (i === stepNumber) {
+        stepEl.classList.add('active');
+        if (circleEl) circleEl.textContent = i;
+      } else {
+        if (circleEl) circleEl.textContent = i;
+      }
+    }
+
+    if (lineEl) {
+      lineEl.classList.remove('active', 'completed');
+      if (i < stepNumber) {
+        lineEl.classList.add('completed');
+      } else if (i === stepNumber) {
+        lineEl.classList.add('active');
+      }
+    }
+  }
+}
+
+function updateRequestInspector() {
+  const rawNumber = (document.getElementById('card-number-input')?.value || '').replace(/\s+/g, '');
+  const rawExp = (document.getElementById('card-expiry-input')?.value || '').replace(/\s+/g, '');
+  const [expMonthStr, expYearStr] = rawExp.split('/');
+  const cvc = document.getElementById('card-cvc-input')?.value || '';
+  const cardholderName = document.getElementById('card-holder-input')?.value || 'Alex Mercer';
+  const amountVal = parseFloat(document.getElementById('terminal-amount')?.value || '49.00');
+  const currency = document.getElementById('terminal-currency')?.value || 'usd';
+  const userId = document.getElementById('terminal-user')?.value || 'usr_demo_001';
+
+  let fullYear = parseInt(expYearStr, 10);
+  if (fullYear && fullYear < 100) fullYear += 2000;
+
+  const previewPayload = {
+    amount: Math.round(amountVal * 100),
+    currency,
+    userId,
+    cardholderName,
+    cardNumber: rawNumber ? `${rawNumber.slice(0, 4)} •••• •••• ${rawNumber.slice(-4)}` : '•••• •••• •••• ••••',
+    expMonth: parseInt(expMonthStr, 10) || null,
+    expYear: fullYear || null,
+    cvc: cvc ? '•••' : null,
+    description: `Card payment for ${cardholderName}`,
+    saveCard: Boolean(document.getElementById('card-save-checkbox')?.checked)
+  };
+
+  const reqCode = document.getElementById('inspector-request-json');
+  if (reqCode) {
+    reqCode.textContent = JSON.stringify(previewPayload, null, 2);
+  }
+}
+
+function validateLuhnClient(cardNumber) {
+  const digits = cardNumber.replace(/\D/g, '');
+  if (digits.length < 13 || digits.length > 19) return false;
+  let sum = 0;
+  let shouldDouble = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = parseInt(digits.charAt(i), 10);
+    if (shouldDouble) {
+      digit *= 2;
+      if (digit > 9) digit -= 9;
+    }
+    sum += digit;
+    shouldDouble = !shouldDouble;
+  }
+  return sum % 10 === 0;
+}
+
 if (cardNumInput) {
   cardNumInput.addEventListener('input', (e) => {
     let value = e.target.value.replace(/\D/g, '');
@@ -584,6 +664,37 @@ if (cardNumInput) {
     document.getElementById('preview-brand-logo').textContent = brand;
     document.getElementById('input-brand-badge').textContent = brand;
     document.getElementById('preview-card-number').textContent = formatted || '•••• •••• •••• ••••';
+
+    const inspTag = document.getElementById('inspector-tag');
+    if (value.length >= 13) {
+      const isValidLuhn = validateLuhnClient(value);
+      if (isValidLuhn) {
+        setPipelineStep(3); // Stage 3: Feed & Validate
+        if (inspTag) {
+          inspTag.textContent = `${brand} Ingested (Luhn Valid)`;
+          inspTag.className = 'tag tag-success';
+        }
+      } else {
+        if (inspTag) {
+          inspTag.textContent = 'Invalid Card Checksum';
+          inspTag.className = 'tag tag-danger';
+        }
+      }
+    } else if (value.length > 0) {
+      setPipelineStep(2); // Stage 2: Supplying
+      if (inspTag) {
+        inspTag.textContent = 'Entering Card Digits...';
+        inspTag.className = 'tag';
+      }
+    } else {
+      setPipelineStep(2);
+      if (inspTag) {
+        inspTag.textContent = 'Ready for Card Data';
+        inspTag.className = 'tag';
+      }
+    }
+
+    updateRequestInspector();
   });
 }
 
@@ -595,12 +706,14 @@ if (cardExpInput) {
     }
     e.target.value = val;
     document.getElementById('preview-card-expiry').textContent = val || 'MM/YY';
+    updateRequestInspector();
   });
 }
 
 if (cardHolderInput) {
   cardHolderInput.addEventListener('input', (e) => {
     document.getElementById('preview-card-holder').textContent = (e.target.value || 'CARDHOLDER NAME').toUpperCase();
+    updateRequestInspector();
   });
 }
 
@@ -612,6 +725,7 @@ function updatePayButtonText() {
   if (payBtnText) {
     payBtnText.textContent = `Pay ${symbol}${amt.toFixed(2)}`;
   }
+  updateRequestInspector();
 }
 
 if (amountInput) amountInput.addEventListener('input', updatePayButtonText);
@@ -628,7 +742,14 @@ if (cardPaymentForm) {
     const originalText = payText.textContent;
 
     payBtn.disabled = true;
-    payText.textContent = 'Authorizing & Processing...';
+    payText.textContent = 'Dispatching API Request...';
+    setPipelineStep(4); // Stage 4: API Request Sent
+
+    const inspTag = document.getElementById('inspector-tag');
+    if (inspTag) {
+      inspTag.textContent = 'API Request Dispatched...';
+      inspTag.className = 'tag tag-info';
+    }
 
     const rawNumber = document.getElementById('card-number-input').value.replace(/\s+/g, '');
     const rawExp = document.getElementById('card-expiry-input').value.replace(/\s+/g, '');
@@ -667,11 +788,28 @@ if (cardPaymentForm) {
 
       const data = await res.json();
 
+      // Show in Response Inspector
+      const respCode = document.getElementById('inspector-response-json');
+      if (respCode) {
+        respCode.textContent = JSON.stringify(data, null, 2);
+      }
+
       if (!res.ok) {
+        if (inspTag) {
+          inspTag.textContent = `Declined: ${data.error?.declineCode || 'Error'}`;
+          inspTag.className = 'tag tag-danger';
+        }
         throw new Error(data.error?.message || 'Payment failed to process');
       }
 
-      // Success! Populate Receipt Modal
+      // Stage 5: Response & Settle Complete!
+      setPipelineStep(5);
+      if (inspTag) {
+        inspTag.textContent = 'Settled (200 OK)';
+        inspTag.className = 'tag tag-success';
+      }
+
+      // Populate Receipt Modal
       const symbol = currency === 'eur' ? '€' : currency === 'gbp' ? '£' : '$';
       document.getElementById('receipt-amount-display').textContent = `${symbol}${(data.amount / 100).toFixed(2)}`;
       document.getElementById('receipt-pi-display').textContent = data.paymentIntentId;
@@ -704,4 +842,5 @@ document.getElementById('btn-refresh').addEventListener('click', refreshAll);
 window.addEventListener('DOMContentLoaded', () => {
   loadHealth();
   refreshAll();
+  updateRequestInspector();
 });

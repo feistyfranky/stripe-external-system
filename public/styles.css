@@ -811,3 +811,140 @@ body {
   color: var(--text-muted);
 }
 
+/* Pipeline Tracker */
+.pipeline-tracker-card {
+  border-left: 4px solid var(--primary);
+}
+
+.pipeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.pipeline-title {
+  font-weight: 700;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-main);
+}
+
+.pipeline-mode {
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: #e0e7ff;
+  color: #4338ca;
+  padding: 3px 8px;
+  border-radius: 4px;
+}
+
+.pipeline-steps {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
+}
+
+.pipeline-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  opacity: 0.45;
+  transition: all 0.25s ease;
+}
+
+.pipeline-step.active, .pipeline-step.completed {
+  opacity: 1;
+}
+
+.step-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border: 2px solid #cbd5e1;
+  color: #64748b;
+  background: white;
+  transition: all 0.25s ease;
+}
+
+.pipeline-step.active .step-circle {
+  border-color: var(--primary);
+  color: white;
+  background: var(--primary);
+  box-shadow: 0 0 0 4px rgba(99, 91, 255, 0.2);
+}
+
+.pipeline-step.completed .step-circle {
+  border-color: #10b981;
+  color: white;
+  background: #10b981;
+}
+
+.step-name {
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--text-main);
+}
+
+.step-sub {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.pipe-line {
+  flex: 1;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 10px;
+  transition: all 0.25s ease;
+}
+
+.pipe-line.completed {
+  background: #10b981;
+}
+
+.pipe-line.active {
+  background: var(--primary);
+}
+
+@media (max-width: 900px) {
+  .pipeline-steps {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+  .pipe-line {
+    display: none;
+  }
+}
+
+/* Inspector Grid */
+.inspector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 768px) {
+  .inspector-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.inspector-header {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+

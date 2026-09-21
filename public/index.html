@@ -383,6 +383,55 @@
 
       <!-- TAB: CARD TERMINAL (PAYMENT PROCESSING) -->
       <section id="tab-terminal" class="tab-pane">
+        <!-- 5-Step Payment Pipeline Tracker -->
+        <div class="card pipeline-tracker-card" style="margin-bottom: 24px; padding: 20px 24px;">
+          <div class="pipeline-header">
+            <span class="pipeline-title">Payment Execution Pipeline Flow</span>
+            <span class="pipeline-mode" id="pipeline-mode-badge">Active Sandbox / Test Mode</span>
+          </div>
+          <div class="pipeline-steps">
+            <div class="pipeline-step completed" id="pipe-step-1">
+              <div class="step-circle">&#10003;</div>
+              <div class="step-text">
+                <div class="step-name">1. System Ready</div>
+                <div class="step-sub">Coding & Backend Initialized</div>
+              </div>
+            </div>
+            <div class="pipe-line completed" id="pipe-line-1"></div>
+            <div class="pipeline-step active" id="pipe-step-2">
+              <div class="step-circle" id="circle-step-2">2</div>
+              <div class="step-text">
+                <div class="step-name">2. Supply Card Data</div>
+                <div class="step-sub">Enter card / select test preset</div>
+              </div>
+            </div>
+            <div class="pipe-line" id="pipe-line-2"></div>
+            <div class="pipeline-step" id="pipe-step-3">
+              <div class="step-circle" id="circle-step-3">3</div>
+              <div class="step-text">
+                <div class="step-name">3. Feed & Validate</div>
+                <div class="step-sub">Luhn Checksum & Brand ID</div>
+              </div>
+            </div>
+            <div class="pipe-line" id="pipe-line-3"></div>
+            <div class="pipeline-step" id="pipe-step-4">
+              <div class="step-circle" id="circle-step-4">4</div>
+              <div class="step-text">
+                <div class="step-name">4. API Request</div>
+                <div class="step-sub">Dispatch to Stripe Rails</div>
+              </div>
+            </div>
+            <div class="pipe-line" id="pipe-line-4"></div>
+            <div class="pipeline-step" id="pipe-step-5">
+              <div class="step-circle" id="circle-step-5">5</div>
+              <div class="step-text">
+                <div class="step-name">5. Response & Settle</div>
+                <div class="step-sub">Receipt & Ledger Balanced</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="terminal-grid">
           <!-- Left Column: Interactive Credit Card & Form -->
           <div class="card">
@@ -499,6 +548,33 @@
               </div>
               <div class="stored-cards-list" id="stored-cards-container">
                 <div class="empty-state">No stored cards yet. Process a payment to attach one!</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Live Request & Response Inspector -->
+        <div class="card" style="margin-top: 24px;">
+          <div class="card-header">
+            <h2>Live API Request & Response Inspector</h2>
+            <span class="tag" id="inspector-tag">Ready for Card Data</span>
+          </div>
+          <p class="text-muted" style="margin-bottom: 16px; font-size: 0.85rem;">
+            Inspect the exact JSON payload dispatched to the payment endpoint and the server response returned in real-time.
+          </p>
+          <div class="inspector-grid">
+            <div>
+              <div class="inspector-header">Outbound API Request Payload</div>
+              <div class="code-box">
+                <div class="code-header">POST /api/payments/process-card</div>
+                <pre><code id="inspector-request-json">// Outbound JSON will populate as you type or select a test card</code></pre>
+              </div>
+            </div>
+            <div>
+              <div class="inspector-header">Inbound API Response Result</div>
+              <div class="code-box">
+                <div class="code-header">HTTP 200 / 402 Response Payload</div>
+                <pre><code id="inspector-response-json">// Server response will populate here upon clicking Pay</code></pre>
               </div>
             </div>
           </div>
