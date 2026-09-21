@@ -106,6 +106,22 @@ export function initDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_ledger_transaction ON ledger_entries(transaction_id);
     CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger_entries(account);
+
+    CREATE TABLE IF NOT EXISTS payment_methods (
+      id TEXT PRIMARY KEY,
+      user_id TEXT,
+      stripe_payment_method_id TEXT UNIQUE NOT NULL,
+      brand TEXT NOT NULL,
+      last4 TEXT NOT NULL,
+      exp_month INTEGER NOT NULL,
+      exp_year INTEGER NOT NULL,
+      cardholder_name TEXT,
+      is_default INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_payment_methods_user ON payment_methods(user_id);
   `);
 
   // Seed default sample tiers / products if empty

@@ -33,6 +33,7 @@ function switchTab(tabId) {
 
   const titles = {
     overview: 'External System Overview',
+    terminal: 'Card Terminal & Payment Processor',
     events: 'Webhook Audit Stream',
     subscriptions: 'Subscriptions & Customers',
     ledger: 'Financial Ledger & Double-Entry Accounts',
@@ -79,6 +80,8 @@ async function refreshAll() {
     loadUsers(),
     loadProducts(),
     loadLedger(),
+    loadTestCards(),
+    loadStoredCards(),
   ]);
   updateOverviewStats();
 }
@@ -182,12 +185,14 @@ async function loadUsers() {
       `).join('');
     }
 
-    // Populate simulator and checkout user dropdowns
+    // Populate simulator, checkout, and terminal user dropdowns
     const simSelect = document.getElementById('sim-user');
     const checkoutSelect = document.getElementById('checkout-user-select');
+    const terminalSelect = document.getElementById('terminal-user');
     const options = appState.users.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
-    simSelect.innerHTML = options;
-    checkoutSelect.innerHTML = options;
+    if (simSelect) simSelect.innerHTML = options;
+    if (checkoutSelect) checkoutSelect.innerHTML = options;
+    if (terminalSelect) terminalSelect.innerHTML = options;
   } catch (err) {
     console.error('Failed to load users:', err);
   }
@@ -454,6 +459,243 @@ document.getElementById('simulator-form').addEventListener('submit', async (e) =
     btn.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Dispatch Simulated Event`;
   }
 });
+
+// --- CARD TERMINAL & PAYMENT LOGIC ---
+
+async function loadTestCards() {
+  try {
+    const res = await fetch('/api/payments/test-cards');
+    const data = await res.json();
+    appState.testCards = data.testCards || [];
+
+    const container = document.getElementById('test-cards-container');
+    if (!container) return;
+
+    container.innerHTML = appState.testCards.map(tc => `
+      <div class="test-card-item" onclick="fillTestCard('${tc.number}', '${tc.exp}', '${tc.cvc}')">
+        <div class="test-card-header">
+          <span class="test-card-name">${tc.name}</span>
+          <span class="test-card-badge">${tc.brand.toUpperCase()}</span>
+        </div>
+        <div class="test-card-number">${tc.number}</div>
+        <div class="test-card-desc">${tc.description}</div>
+      </div>
+    `).join('');
+  } catch (err) {
+    console.error('Failed to load test cards:', err);
+  }
+}
+
+function fillTestCard(number, exp, cvc) {
+  const cardInput = document.getElementById('card-number-input');
+  const expInput = document.getElementById('card-expiry-input');
+  const cvcInput = document.getElementById('card-cvc-input');
+
+  if (cardInput) {
+    cardInput.value = number;
+    cardInput.dispatchEvent(new Event('input'));
+  }
+  if (expInput) {
+    expInput.value = exp;
+    expInput.dispatchEvent(new Event('input'));
+  }
+  if (cvcInput) {
+    cvcInput.value = cvc;
+  }
+  showAlert(`Loaded ${number} into payment terminal!`, 'info');
+}
+
+async function loadStoredCards() {
+  try {
+    const res = await fetch('/api/payments/methods');
+    const data = await res.json();
+    appState.storedCards = data.paymentMethods || [];
+
+    const container = document.getElementById('stored-cards-container');
+    if (!container) return;
+
+    if (appState.storedCards.length === 0) {
+      container.innerHTML = '<div class="empty-state">No stored cards yet. Process a payment to attach one!</div>';
+    } else {
+      container.innerHTML = appState.storedCards.map(c => `
+        <div class="stored-card-item">
+          <div>
+            <span class="stored-card-brand">${c.brand}</span>
+            <strong> •••• ${c.last4}</strong>
+            <div class="stored-card-meta">Expires ${c.exp_month}/${c.exp_year} &bull; ${c.cardholder_name || 'Cardholder'}</div>
+          </div>
+          <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 0.75rem;" onclick="useStoredCard('${c.brand}', '${c.last4}', ${c.exp_month}, ${c.exp_year}, '${c.cardholder_name || ''}')">Use Card</button>
+        </div>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load stored cards:', err);
+  }
+}
+
+function useStoredCard(brand, last4, expMonth, expYear, name) {
+  document.getElementById('preview-brand-logo').textContent = brand.toUpperCase();
+  document.getElementById('input-brand-badge').textContent = brand.toUpperCase();
+  document.getElementById('preview-card-number').textContent = `•••• •••• •••• ${last4}`;
+  document.getElementById('preview-card-expiry').textContent = `${String(expMonth).padStart(2, '0')}/${String(expYear).slice(-2)}`;
+  if (name) {
+    document.getElementById('preview-card-holder').textContent = name.toUpperCase();
+    document.getElementById('card-holder-input').value = name;
+  }
+  showAlert(`Selected saved ${brand.toUpperCase()} ending in ${last4}`);
+}
+
+// Formatters & Live Card Preview Listeners
+const cardNumInput = document.getElementById('card-number-input');
+const cardExpInput = document.getElementById('card-expiry-input');
+const cardHolderInput = document.getElementById('card-holder-input');
+const amountInput = document.getElementById('terminal-amount');
+const currencySelect = document.getElementById('terminal-currency');
+
+function detectClientBrand(number) {
+  const clean = number.replace(/\D/g, '');
+  if (/^4/.test(clean)) return 'VISA';
+  if (/^(5[1-5]|222[1-9]|22[3-9]|2[3-6]|27[01]|2720)/.test(clean)) return 'MASTERCARD';
+  if (/^3[47]/.test(clean)) return 'AMEX';
+  if (/^6(?:011|5)/.test(clean)) return 'DISCOVER';
+  return 'CARD';
+}
+
+if (cardNumInput) {
+  cardNumInput.addEventListener('input', (e) => {
+    let value = e.target.value.replace(/\D/g, '');
+    const brand = detectClientBrand(value);
+
+    // Format with spaces
+    let formatted = '';
+    if (brand === 'AMEX') {
+      if (value.length > 0) formatted += value.substring(0, 4);
+      if (value.length > 4) formatted += ' ' + value.substring(4, 10);
+      if (value.length > 10) formatted += ' ' + value.substring(10, 15);
+    } else {
+      for (let i = 0; i < value.length && i < 16; i += 4) {
+        if (i > 0) formatted += ' ';
+        formatted += value.substring(i, i + 4);
+      }
+    }
+
+    e.target.value = formatted;
+
+    document.getElementById('preview-brand-logo').textContent = brand;
+    document.getElementById('input-brand-badge').textContent = brand;
+    document.getElementById('preview-card-number').textContent = formatted || '•••• •••• •••• ••••';
+  });
+}
+
+if (cardExpInput) {
+  cardExpInput.addEventListener('input', (e) => {
+    let val = e.target.value.replace(/\D/g, '');
+    if (val.length >= 2) {
+      val = val.substring(0, 2) + ' / ' + val.substring(2, 4);
+    }
+    e.target.value = val;
+    document.getElementById('preview-card-expiry').textContent = val || 'MM/YY';
+  });
+}
+
+if (cardHolderInput) {
+  cardHolderInput.addEventListener('input', (e) => {
+    document.getElementById('preview-card-holder').textContent = (e.target.value || 'CARDHOLDER NAME').toUpperCase();
+  });
+}
+
+function updatePayButtonText() {
+  const amt = parseFloat(amountInput ? amountInput.value : 49) || 0;
+  const curr = currencySelect ? currencySelect.value : 'usd';
+  const symbol = curr === 'eur' ? '€' : curr === 'gbp' ? '£' : '$';
+  const payBtnText = document.getElementById('btn-pay-text');
+  if (payBtnText) {
+    payBtnText.textContent = `Pay ${symbol}${amt.toFixed(2)}`;
+  }
+}
+
+if (amountInput) amountInput.addEventListener('input', updatePayButtonText);
+if (currencySelect) currencySelect.addEventListener('change', updatePayButtonText);
+
+// Card Payment Form Submission
+const cardPaymentForm = document.getElementById('card-payment-form');
+if (cardPaymentForm) {
+  cardPaymentForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    const payBtn = document.getElementById('btn-process-payment');
+    const payText = document.getElementById('btn-pay-text');
+    const originalText = payText.textContent;
+
+    payBtn.disabled = true;
+    payText.textContent = 'Authorizing & Processing...';
+
+    const rawNumber = document.getElementById('card-number-input').value.replace(/\s+/g, '');
+    const rawExp = document.getElementById('card-expiry-input').value.replace(/\s+/g, '');
+    const [expMonthStr, expYearStr] = rawExp.split('/');
+    const expMonth = parseInt(expMonthStr, 10);
+    let expYear = parseInt(expYearStr, 10);
+    if (expYear < 100) expYear += 2000;
+
+    const cvc = document.getElementById('card-cvc-input').value.trim();
+    const cardholderName = document.getElementById('card-holder-input').value.trim();
+    const billingZip = document.getElementById('card-zip-input').value.trim();
+    const amountVal = parseFloat(document.getElementById('terminal-amount').value || '0');
+    const amountInCents = Math.round(amountVal * 100);
+    const currency = document.getElementById('terminal-currency').value;
+    const userId = document.getElementById('terminal-user').value;
+    const saveCard = document.getElementById('card-save-checkbox').checked;
+
+    try {
+      const res = await fetch('/api/payments/process-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          cardNumber: rawNumber,
+          expMonth,
+          expYear,
+          cvc,
+          cardholderName,
+          billingZip,
+          amount: amountInCents,
+          currency,
+          userId,
+          description: `Card charge for ${cardholderName}`,
+          saveCard,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error?.message || 'Payment failed to process');
+      }
+
+      // Success! Populate Receipt Modal
+      const symbol = currency === 'eur' ? '€' : currency === 'gbp' ? '£' : '$';
+      document.getElementById('receipt-amount-display').textContent = `${symbol}${(data.amount / 100).toFixed(2)}`;
+      document.getElementById('receipt-pi-display').textContent = data.paymentIntentId;
+      document.getElementById('receipt-method-display').textContent = `${data.brand.toUpperCase()} ending in ${data.last4}`;
+      document.getElementById('receipt-date-display').textContent = new Date().toLocaleString();
+
+      document.getElementById('modal-receipt').classList.remove('hidden');
+      showAlert(`Payment of ${symbol}${(data.amount / 100).toFixed(2)} succeeded!`);
+
+      // Refresh all data
+      await refreshAll();
+
+    } catch (err) {
+      alert(`Card Error: ${err.message}`);
+    } finally {
+      payBtn.disabled = false;
+      payText.textContent = originalText;
+    }
+  });
+}
+
+function closeReceiptModal() {
+  document.getElementById('modal-receipt').classList.add('hidden');
+}
 
 // Refresh button
 document.getElementById('btn-refresh').addEventListener('click', refreshAll);

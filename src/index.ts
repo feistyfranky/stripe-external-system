@@ -10,6 +10,7 @@ import { eventsRouter } from './routes/events';
 import { customersRouter } from './routes/customers';
 import { ledgerRouter } from './routes/ledger';
 import { simulatorRouter } from './routes/simulator';
+import { paymentsRouter } from './routes/payments';
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use('/api/events', eventsRouter);
 app.use('/api', customersRouter);
 app.use('/api/ledger', ledgerRouter);
 app.use('/api/simulator', simulatorRouter);
+app.use('/api/payments', paymentsRouter);
 
 // 6. Health & Status endpoint
 app.get('/api/health', (req, res) => {

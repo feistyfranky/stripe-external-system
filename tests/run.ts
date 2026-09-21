@@ -204,6 +204,95 @@ async function runTests() {
     );
   });
 
+  // --- TEST 5: Card Validation & Brand Detection ---
+  await test('Card Validation, Luhn Algorithm & Brand Detection', async () => {
+    const { validateLuhn, detectCardBrand, cardGateway } = await import('../src/services/card-gateway');
+
+    // Standard Stripe test cards
+    assert.strictEqual(validateLuhn('4242424242424242'), true);
+    assert.strictEqual(detectCardBrand('4242424242424242'), 'visa');
+
+    assert.strictEqual(validateLuhn('5555555555554444'), true);
+    assert.strictEqual(detectCardBrand('5555555555554444'), 'mastercard');
+
+    assert.strictEqual(validateLuhn('378282246310005'), true);
+    assert.strictEqual(detectCardBrand('378282246310005'), 'amex');
+
+    // Invalid Luhn
+    assert.strictEqual(validateLuhn('4242424242424243'), false);
+
+    // Validation details test
+    const validCheck = cardGateway.validateCardDetails({
+      cardNumber: '4242 4242 4242 4242',
+      expMonth: 12,
+      expYear: 2028,
+      cvc: '123',
+      amount: 2500,
+    });
+    assert.strictEqual(validCheck.valid, true);
+
+    const expiredCheck = cardGateway.validateCardDetails({
+      cardNumber: '4242 4242 4242 4242',
+      expMonth: 1,
+      expYear: 2020,
+      cvc: '123',
+      amount: 2500,
+    });
+    assert.strictEqual(expiredCheck.valid, false);
+    assert.match(expiredCheck.error || '', /expired/i);
+  });
+
+  // --- TEST 6: Direct Card Payment Processing (Success & Decline) ---
+  await test('Direct Card Payment Processing & Ledger Settlement', async () => {
+    const { cardGateway } = await import('../src/services/card-gateway');
+    const { paymentMethodsRepo } = await import('../src/db/repositories');
+
+    // 1. Process valid card payment
+    const paymentResult = await cardGateway.processCard({
+      cardNumber: '4242 4242 4242 4242',
+      expMonth: 12,
+      expYear: 2028,
+      cvc: '123',
+      cardholderName: 'Jane Doe',
+      amount: 5000, // $50.00
+      currency: 'usd',
+      description: 'Consulting Service Payment',
+    });
+
+    assert.strictEqual(paymentResult.success, true);
+    assert.strictEqual(paymentResult.status, 'succeeded');
+    assert.strictEqual(paymentResult.brand, 'visa');
+    assert.strictEqual(paymentResult.last4, '4242');
+    assert.match(paymentResult.paymentIntentId, /^pi_/);
+
+    // Verify payment method recorded
+    const methods = paymentMethodsRepo.list(5);
+    const foundMethod = methods.find(m => m.stripe_payment_method_id === paymentResult.paymentMethodId);
+    assert(foundMethod, 'Masked payment method should be stored');
+    assert.strictEqual(foundMethod.last4, '4242');
+
+    // Verify ledger debits = credits
+    const ledger = db.prepare(`
+      SELECT SUM(debit) as total_debit, SUM(credit) as total_credit 
+      FROM ledger_entries
+    `).get() as { total_debit: number; total_credit: number };
+    assert.strictEqual(ledger.total_debit, ledger.total_credit);
+
+    // 2. Test decline handling (card ending in 0002)
+    await assert.rejects(
+      async () => {
+        await cardGateway.processCard({
+          cardNumber: '4000 0000 0000 0002',
+          expMonth: 12,
+          expYear: 2028,
+          cvc: '123',
+          amount: 5000,
+        });
+      },
+      /insufficient funds/i
+    );
+  });
+
   console.log(`\n-----------------------------------------------------`);
   console.log(`Results: ${passed} Passed, ${failed} Failed`);
   console.log(`-----------------------------------------------------\n`);

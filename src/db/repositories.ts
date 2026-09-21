@@ -296,3 +296,50 @@ export const ledgerRepo = {
     `).all(limit) as any[];
   }
 };
+
+export const paymentMethodsRepo = {
+  create(method: {
+    userId?: string | null;
+    paymentMethodId: string;
+    brand: string;
+    last4: string;
+    expMonth: number;
+    expYear: number;
+    cardholderName?: string | null;
+    isDefault?: boolean;
+  }) {
+    const id = 'pm_rec_' + uuidv4();
+    db.prepare(`
+      INSERT INTO payment_methods (
+        id, user_id, stripe_payment_method_id, brand, last4, exp_month, exp_year, cardholder_name, is_default
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      id,
+      method.userId || null,
+      method.paymentMethodId,
+      method.brand,
+      method.last4,
+      method.expMonth,
+      method.expYear,
+      method.cardholderName || null,
+      method.isDefault !== false ? 1 : 0
+    );
+    return id;
+  },
+
+  findByUserId(userId: string) {
+    return db.prepare('SELECT * FROM payment_methods WHERE user_id = ? ORDER BY created_at DESC').all(userId) as any[];
+  },
+
+  list(limit = 50) {
+    return db.prepare(`
+      SELECT pm.*, u.email as user_email, u.name as user_name
+      FROM payment_methods pm
+      LEFT JOIN users u ON pm.user_id = u.id
+      ORDER BY pm.created_at DESC
+      LIMIT ?
+    `).all(limit) as any[];
+  }
+};
+
