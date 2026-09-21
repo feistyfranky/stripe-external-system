@@ -1,0 +1,465 @@
+// State
+let appState = {
+  events: [],
+  users: [],
+  subscriptions: [],
+  products: [],
+  ledgerBalances: [],
+  ledgerEntries: [],
+  selectedEvent: null,
+  selectedProduct: null,
+};
+
+// DOM Elements
+const alertBanner = document.getElementById('alert-banner');
+
+function showAlert(message, type = 'success') {
+  alertBanner.className = `alert-banner ${type}`;
+  alertBanner.textContent = message;
+  alertBanner.classList.remove('hidden');
+  setTimeout(() => {
+    alertBanner.classList.add('hidden');
+  }, 4000);
+}
+
+// Navigation Tabs
+function switchTab(tabId) {
+  document.querySelectorAll('.nav-item').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === tabId);
+  });
+  document.querySelectorAll('.tab-pane').forEach(pane => {
+    pane.classList.toggle('active', pane.id === `tab-${tabId}`);
+  });
+
+  const titles = {
+    overview: 'External System Overview',
+    events: 'Webhook Audit Stream',
+    subscriptions: 'Subscriptions & Customers',
+    ledger: 'Financial Ledger & Double-Entry Accounts',
+    simulator: 'Webhook Event Simulator',
+    integration: 'Stripe CLI & Webhook Setup Guide',
+  };
+  document.getElementById('page-title').textContent = titles[tabId] || 'Stripe External System';
+}
+
+document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// Format currency
+function formatCents(cents, currency = 'usd') {
+  const symbol = currency.toLowerCase() === 'eur' ? '€' : currency.toLowerCase() === 'gbp' ? '£' : '$';
+  return `${symbol}${(cents / 100).toFixed(2)}`;
+}
+
+// Format relative date
+function formatDate(dateStr) {
+  if (!dateStr) return 'N/A';
+  const d = new Date(dateStr);
+  return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// Load Health and System Status
+async function loadHealth() {
+  try {
+    const res = await fetch('/api/health');
+    const data = await res.json();
+    document.getElementById('stripe-mode-tag').textContent = 
+      data.stripeMode === 'connected' ? 'Stripe Connected' : 'Simulated Sandbox';
+  } catch (err) {
+    console.error('Failed to load health:', err);
+  }
+}
+
+// Load All Data
+async function refreshAll() {
+  await Promise.all([
+    loadEvents(),
+    loadSubscriptions(),
+    loadUsers(),
+    loadProducts(),
+    loadLedger(),
+  ]);
+  updateOverviewStats();
+}
+
+async function loadEvents() {
+  try {
+    const res = await fetch('/api/events?limit=50');
+    const data = await res.json();
+    appState.events = data.events || [];
+
+    document.getElementById('event-badge-count').textContent = appState.events.length;
+    renderEvents();
+  } catch (err) {
+    console.error('Failed to load events:', err);
+  }
+}
+
+function renderEvents() {
+  // Overview mini table
+  const overviewTbody = document.querySelector('#table-overview-events tbody');
+  const recent5 = appState.events.slice(0, 5);
+  if (recent5.length === 0) {
+    overviewTbody.innerHTML = '<tr><td colspan="4" class="empty-state">No events yet. Trigger one on the right!</td></tr>';
+  } else {
+    overviewTbody.innerHTML = recent5.map(evt => `
+      <tr>
+        <td><code>${evt.event_id}</code></td>
+        <td><strong>${evt.event_type}</strong></td>
+        <td><span class="badge ${evt.status === 'processed' ? 'badge-success' : 'badge-danger'}">${evt.status}</span></td>
+        <td>${formatDate(evt.received_at)}</td>
+      </tr>
+    `).join('');
+  }
+
+  // Full table
+  const fullTbody = document.querySelector('#table-events-full tbody');
+  if (appState.events.length === 0) {
+    fullTbody.innerHTML = '<tr><td colspan="6" class="empty-state">No events recorded.</td></tr>';
+  } else {
+    fullTbody.innerHTML = appState.events.map(evt => `
+      <tr>
+        <td><code>${evt.event_id}</code></td>
+        <td><strong>${evt.event_type}</strong></td>
+        <td><span class="badge ${evt.status === 'processed' ? 'badge-success' : 'badge-danger'}">${evt.status}</span></td>
+        <td><code>${JSON.stringify(evt.payload?.data?.object?.id || evt.payload?.type || '')}</code></td>
+        <td>${formatDate(evt.received_at)}</td>
+        <td>
+          <button class="btn btn-secondary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="viewEvent('${evt.id}')">Inspect</button>
+          <button class="btn btn-primary" style="padding: 4px 8px; font-size: 0.75rem;" onclick="replayEvent('${evt.id}')">Replay</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+}
+
+async function loadSubscriptions() {
+  try {
+    const res = await fetch('/api/subscriptions');
+    const data = await res.json();
+    appState.subscriptions = data.subscriptions || [];
+
+    const tbody = document.querySelector('#table-subscriptions tbody');
+    if (appState.subscriptions.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-state">No subscriptions registered.</td></tr>';
+    } else {
+      tbody.innerHTML = appState.subscriptions.map(s => `
+        <tr>
+          <td><code>${s.stripe_subscription_id}</code></td>
+          <td><code>${s.stripe_customer_id}</code></td>
+          <td><strong>${s.plan_name || s.plan_id}</strong></td>
+          <td><span class="badge ${s.status === 'active' ? 'badge-success' : 'badge-danger'}">${s.status}</span></td>
+          <td>${formatDate(s.current_period_start)}</td>
+          <td>${formatDate(s.current_period_end)}</td>
+          <td>${s.cancel_at_period_end ? 'Yes' : 'No'}</td>
+        </tr>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load subscriptions:', err);
+  }
+}
+
+async function loadUsers() {
+  try {
+    const res = await fetch('/api/users');
+    const data = await res.json();
+    appState.users = data.users || [];
+
+    const tbody = document.querySelector('#table-users tbody');
+    if (appState.users.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" class="empty-state">No users registered.</td></tr>';
+    } else {
+      tbody.innerHTML = appState.users.map(u => `
+        <tr>
+          <td><code>${u.id}</code></td>
+          <td><strong>${u.name}</strong></td>
+          <td>${u.email}</td>
+          <td><code>${u.stripe_customer_id || 'Not mapped yet'}</code></td>
+          <td>${formatDate(u.created_at)}</td>
+        </tr>
+      `).join('');
+    }
+
+    // Populate simulator and checkout user dropdowns
+    const simSelect = document.getElementById('sim-user');
+    const checkoutSelect = document.getElementById('checkout-user-select');
+    const options = appState.users.map(u => `<option value="${u.id}">${u.name} (${u.email})</option>`).join('');
+    simSelect.innerHTML = options;
+    checkoutSelect.innerHTML = options;
+  } catch (err) {
+    console.error('Failed to load users:', err);
+  }
+}
+
+async function loadProducts() {
+  try {
+    const res = await fetch('/api/products');
+    const data = await res.json();
+    appState.products = data.products || [];
+
+    const tierList = document.getElementById('checkout-tier-list');
+    tierList.innerHTML = appState.products.map((p, idx) => `
+      <div class="tier-card ${idx === 0 ? 'selected' : ''}" onclick="selectTier('${p.id}', this)">
+        <div class="tier-name">${p.name}</div>
+        <div class="tier-price">${formatCents(p.amount, p.currency)}<span style="font-size: 0.75rem; color: #64748b;">/${p.interval}</span></div>
+      </div>
+    `).join('');
+
+    if (appState.products.length > 0) {
+      appState.selectedProduct = appState.products[0].id;
+    }
+  } catch (err) {
+    console.error('Failed to load products:', err);
+  }
+}
+
+function selectTier(productId, el) {
+  document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+  appState.selectedProduct = productId;
+}
+
+async function loadLedger() {
+  try {
+    const [balRes, entriesRes] = await Promise.all([
+      fetch('/api/ledger/balances'),
+      fetch('/api/ledger/entries?limit=50'),
+    ]);
+    const balData = await balRes.json();
+    const entriesData = await entriesRes.json();
+
+    appState.ledgerBalances = balData.balances || [];
+    appState.ledgerEntries = entriesData.entries || [];
+
+    // Render Balances
+    const balTbody = document.querySelector('#table-ledger-balances tbody');
+    if (appState.ledgerBalances.length === 0) {
+      balTbody.innerHTML = '<tr><td colspan="5" class="empty-state">No ledger entries recorded yet.</td></tr>';
+    } else {
+      balTbody.innerHTML = appState.ledgerBalances.map(b => `
+        <tr>
+          <td><strong>${b.account}</strong></td>
+          <td>${b.currency.toUpperCase()}</td>
+          <td>${formatCents(b.total_debit, b.currency)}</td>
+          <td>${formatCents(b.total_credit, b.currency)}</td>
+          <td><strong>${formatCents(b.net_balance, b.currency)}</strong></td>
+        </tr>
+      `).join('');
+    }
+
+    // Render Journal Entries
+    const entriesTbody = document.querySelector('#table-ledger-entries tbody');
+    if (appState.ledgerEntries.length === 0) {
+      entriesTbody.innerHTML = '<tr><td colspan="6" class="empty-state">No journal entries recorded.</td></tr>';
+    } else {
+      entriesTbody.innerHTML = appState.ledgerEntries.map(e => `
+        <tr>
+          <td>${formatDate(e.created_at)}</td>
+          <td><code>${e.entry_type}</code></td>
+          <td>${e.account}</td>
+          <td>${e.debit > 0 ? formatCents(e.debit, e.currency) : '-'}</td>
+          <td>${e.credit > 0 ? formatCents(e.credit, e.currency) : '-'}</td>
+          <td>${e.description}</td>
+        </tr>
+      `).join('');
+    }
+  } catch (err) {
+    console.error('Failed to load ledger:', err);
+  }
+}
+
+function updateOverviewStats() {
+  // Revenue credited
+  const revenueBal = appState.ledgerBalances.find(b => b.account === 'subscription_revenue');
+  const revenueTotal = revenueBal ? revenueBal.total_credit : 0;
+  document.getElementById('stat-revenue').textContent = formatCents(revenueTotal);
+
+  // Clearing balance
+  const clearingBal = appState.ledgerBalances.find(b => b.account === 'stripe_clearing');
+  const clearingTotal = clearingBal ? clearingBal.net_balance : 0;
+  document.getElementById('stat-clearing').textContent = formatCents(clearingTotal);
+
+  // Active subs
+  const activeCount = appState.subscriptions.filter(s => s.status === 'active').length;
+  document.getElementById('stat-active-subs').textContent = activeCount;
+
+  // Processed events
+  const processedCount = appState.events.filter(e => e.status === 'processed').length;
+  document.getElementById('stat-webhooks-processed').textContent = processedCount;
+}
+
+// Quick Simulator trigger
+async function triggerQuickEvent(eventType) {
+  try {
+    const user = appState.users[0];
+    const res = await fetch('/api/simulator/trigger-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        eventType,
+        userId: user ? user.id : 'usr_demo_001',
+        amount: 4900,
+        currency: 'usd',
+      }),
+    });
+    const result = await res.json();
+    if (res.ok) {
+      showAlert(`Dispatched & processed ${eventType}!`);
+      await refreshAll();
+    } else {
+      alert(`Simulation failed: ${result.error}`);
+    }
+  } catch (err) {
+    alert(`Simulation error: ${err.message}`);
+  }
+}
+
+// Event Inspection Modal
+function viewEvent(id) {
+  const evt = appState.events.find(e => e.id === id);
+  if (!evt) return;
+  appState.selectedEvent = evt;
+  document.getElementById('modal-event-title').textContent = `${evt.event_type} (${evt.event_id})`;
+  document.getElementById('modal-event-json').textContent = JSON.stringify(evt.payload, null, 2);
+  document.getElementById('modal-event').classList.remove('hidden');
+}
+
+function closeModal() {
+  document.getElementById('modal-event').classList.add('hidden');
+}
+
+async function replayEvent(id) {
+  try {
+    const res = await fetch(`/api/events/${id}/replay`, { method: 'POST' });
+    const result = await res.json();
+    if (res.ok) {
+      showAlert(`Event replayed successfully!`);
+      closeModal();
+      await refreshAll();
+    } else {
+      alert(`Replay failed: ${result.error}`);
+    }
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+document.getElementById('btn-modal-replay').addEventListener('click', () => {
+  if (appState.selectedEvent) {
+    replayEvent(appState.selectedEvent.id);
+  }
+});
+
+// Checkout Modal
+document.getElementById('btn-open-checkout').addEventListener('click', () => {
+  document.getElementById('modal-checkout').classList.remove('hidden');
+});
+
+function closeCheckoutModal() {
+  document.getElementById('modal-checkout').classList.add('hidden');
+}
+
+document.getElementById('btn-submit-checkout').addEventListener('click', async () => {
+  const userId = document.getElementById('checkout-user-select').value;
+  const priceId = appState.selectedProduct || 'price_starter';
+
+  try {
+    const res = await fetch('/api/checkout/create-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId, priceId }),
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      closeCheckoutModal();
+      showAlert(`Checkout session created: ${data.sessionId}`);
+
+      // If simulated checkout, auto-trigger checkout.session.completed event!
+      if (data.simulated) {
+        setTimeout(async () => {
+          await triggerQuickEvent('checkout.session.completed');
+        }, 600);
+      } else if (data.url) {
+        window.open(data.url, '_blank');
+      }
+    } else {
+      alert(`Checkout failed: ${JSON.stringify(data.error)}`);
+    }
+  } catch (err) {
+    alert(`Checkout error: ${err.message}`);
+  }
+});
+
+async function openPortalForDemoUser() {
+  const user = appState.users[0];
+  if (!user) return alert('No user available');
+
+  try {
+    const res = await fetch('/api/portal/create-session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userId: user.id }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showAlert(`Portal session launched: ${data.sessionId}`);
+      if (!data.simulated && data.url) {
+        window.open(data.url, '_blank');
+      }
+    } else {
+      alert(`Portal error: ${data.error}`);
+    }
+  } catch (err) {
+    alert(`Portal error: ${err.message}`);
+  }
+}
+
+// Simulator Form submit
+document.getElementById('simulator-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const eventType = document.getElementById('sim-event-type').value;
+  const userId = document.getElementById('sim-user').value;
+  const amount = document.getElementById('sim-amount').value;
+  const currency = document.getElementById('sim-currency').value;
+
+  const btn = document.getElementById('btn-dispatch-sim');
+  btn.disabled = true;
+  btn.textContent = 'Dispatching...';
+
+  try {
+    const res = await fetch('/api/simulator/trigger-event', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventType, userId, amount, currency }),
+    });
+
+    const data = await res.json();
+    const codeBox = document.getElementById('sim-response-card');
+    const codeElem = document.getElementById('sim-response-code');
+
+    codeElem.textContent = JSON.stringify(data, null, 2);
+    codeBox.classList.remove('hidden');
+
+    if (res.ok) {
+      showAlert(`Event ${eventType} dispatched and verified!`);
+      await refreshAll();
+    }
+  } catch (err) {
+    alert(`Simulator error: ${err.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg> Dispatch Simulated Event`;
+  }
+});
+
+// Refresh button
+document.getElementById('btn-refresh').addEventListener('click', refreshAll);
+
+// Init
+window.addEventListener('DOMContentLoaded', () => {
+  loadHealth();
+  refreshAll();
+});

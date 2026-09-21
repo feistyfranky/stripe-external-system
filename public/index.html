@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Stripe External System & Operations Portal</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="app-layout">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <rect x="2" y="5" width="20" height="14" rx="3"></rect>
+            <line x1="2" y1="10" x2="22" y2="10"></line>
+          </svg>
+        </div>
+        <div>
+          <div class="brand-title">Stripe Bridge</div>
+          <div class="brand-subtitle">External System v1.0</div>
+        </div>
+      </div>
+
+      <nav class="nav-menu">
+        <button class="nav-item active" data-tab="overview">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+          Overview & Stats
+        </button>
+        <button class="nav-item" data-tab="events">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+          Webhook Events
+          <span class="badge" id="event-badge-count">0</span>
+        </button>
+        <button class="nav-item" data-tab="subscriptions">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          Subscriptions
+        </button>
+        <button class="nav-item" data-tab="ledger">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"></line><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+          Ledger & Accounts
+        </button>
+        <button class="nav-item" data-tab="simulator">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+          Webhook Simulator
+        </button>
+        <button class="nav-item" data-tab="integration">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+          CLI & Setup Guide
+        </button>
+      </nav>
+
+      <div class="sidebar-status">
+        <div class="status-indicator">
+          <span class="status-dot healthy"></span>
+          <span id="system-status-text">External System Online</span>
+        </div>
+        <div class="status-meta">
+          <span class="mode-tag" id="stripe-mode-tag">Simulated Sandbox</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">External System Overview</h1>
+          <p class="subtitle" id="page-subtitle">Real-time payment synchronization, webhook ingestion, and ledger accounting.</p>
+        </div>
+        <div class="topbar-actions">
+          <button class="btn btn-secondary" id="btn-refresh" title="Refresh data">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            Refresh
+          </button>
+          <button class="btn btn-primary" id="btn-open-checkout">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            Test Checkout Session
+          </button>
+        </div>
+      </header>
+
+      <!-- Alert Banner -->
+      <div id="alert-banner" class="alert-banner hidden"></div>
+
+      <!-- TAB 1: OVERVIEW -->
+      <section id="tab-overview" class="tab-pane active">
+        <!-- Stat Cards -->
+        <div class="stats-grid">
+          <div class="card stat-card">
+            <div class="stat-label">Recognized Revenue</div>
+            <div class="stat-value" id="stat-revenue">$0.00</div>
+            <div class="stat-sub">Gross Stripe volume credited</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Stripe Clearing Balance</div>
+            <div class="stat-value" id="stat-clearing">$0.00</div>
+            <div class="stat-sub">Net pending Stripe payout</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Active Subscriptions</div>
+            <div class="stat-value" id="stat-active-subs">0</div>
+            <div class="stat-sub">Synchronized customer accounts</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-label">Processed Webhooks</div>
+            <div class="stat-value" id="stat-webhooks-processed">0</div>
+            <div class="stat-sub">Zero data loss / Idempotent</div>
+          </div>
+        </div>
+
+        <!-- Two Column Layout -->
+        <div class="content-grid">
+          <!-- Recent Webhook Events -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Recent Webhook Activity</h2>
+              <button class="btn-link" onclick="switchTab('events')">View All &rarr;</button>
+            </div>
+            <div class="table-container">
+              <table class="table" id="table-overview-events">
+                <thead>
+                  <tr>
+                    <th>Event ID</th>
+                    <th>Type</th>
+                    <th>Status</th>
+                    <th>Received At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr><td colspan="4" class="empty-state">No events recorded yet. Trigger one below!</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Quick Test Console -->
+          <div class="card">
+            <div class="card-header">
+              <h2>Quick Action & Simulation</h2>
+            </div>
+            <p class="text-muted" style="margin-bottom: 16px;">Trigger instant Stripe lifecycle events to test end-to-end webhook processing and ledger accounting.</p>
+            <div class="action-buttons-grid">
+              <button class="quick-btn" onclick="triggerQuickEvent('checkout.session.completed')">
+                <span class="quick-btn-icon">💳</span>
+                <div>
+                  <div class="quick-btn-title">Simulate Checkout Succeeded</div>
+                  <div class="quick-btn-desc">checkout.session.completed</div>
+                </div>
+              </button>
+              <button class="quick-btn" onclick="triggerQuickEvent('invoice.paid')">
+                <span class="quick-btn-icon">🧾</span>
+                <div>
+                  <div class="quick-btn-title">Simulate Invoice Payment</div>
+                  <div class="quick-btn-desc">invoice.paid ($49.00)</div>
+                </div>
+              </button>
+              <button class="quick-btn" onclick="triggerQuickEvent('customer.subscription.updated')">
+                <span class="quick-btn-icon">🔄</span>
+                <div>
+                  <div class="quick-btn-title">Simulate Subscription Update</div>
+                  <div class="quick-btn-desc">customer.subscription.updated</div>
+                </div>
+              </button>
+              <button class="quick-btn" onclick="triggerQuickEvent('charge.refunded')">
+                <span class="quick-btn-icon">↩️</span>
+                <div>
+                  <div class="quick-btn-title">Simulate Customer Refund</div>
+                  <div class="quick-btn-desc">charge.refunded ($49.00)</div>
+                </div>
+              </button>
+              <button class="quick-btn" onclick="triggerQuickEvent('payout.paid')">
+                <span class="quick-btn-icon">🏦</span>
+                <div>
+                  <div class="quick-btn-title">Simulate Bank Payout</div>
+                  <div class="quick-btn-desc">payout.paid ($245.00)</div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 2: WEBHOOK EVENTS -->
+      <section id="tab-events" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2>Webhook Event Stream (Audit Log)</h2>
+            <div class="header-tags">
+              <span class="tag">Raw Body Verified</span>
+              <span class="tag">Idempotent Deduplication</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="table" id="table-events-full">
+              <thead>
+                <tr>
+                  <th>Event ID</th>
+                  <th>Event Type</th>
+                  <th>Status</th>
+                  <th>Payload Preview</th>
+                  <th>Received</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" class="empty-state">Loading events...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 3: SUBSCRIPTIONS & CUSTOMERS -->
+      <section id="tab-subscriptions" class="tab-pane">
+        <div class="card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <h2>Active Subscriptions</h2>
+            <button class="btn btn-secondary" onclick="openPortalForDemoUser()">Open Customer Portal</button>
+          </div>
+          <div class="table-container">
+            <table class="table" id="table-subscriptions">
+              <thead>
+                <tr>
+                  <th>Subscription ID</th>
+                  <th>Customer ID</th>
+                  <th>Plan Tier</th>
+                  <th>Status</th>
+                  <th>Period Start</th>
+                  <th>Period End</th>
+                  <th>Cancel at End</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="7" class="empty-state">No subscriptions yet. Complete a checkout to create one.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>External Users & Stripe Customers</h2>
+          </div>
+          <div class="table-container">
+            <table class="table" id="table-users">
+              <thead>
+                <tr>
+                  <th>Internal User ID</th>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Stripe Customer ID</th>
+                  <th>Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" class="empty-state">Loading users...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 4: LEDGER & ACCOUNTS -->
+      <section id="tab-ledger" class="tab-pane">
+        <div class="card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <h2>Double-Entry Trial Balance</h2>
+            <div class="header-tags">
+              <span class="tag tag-success">Debits == Credits Guaranteed</span>
+            </div>
+          </div>
+          <div class="table-container">
+            <table class="table" id="table-ledger-balances">
+              <thead>
+                <tr>
+                  <th>Ledger Account</th>
+                  <th>Currency</th>
+                  <th>Total Debit ($)</th>
+                  <th>Total Credit ($)</th>
+                  <th>Net Balance ($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="5" class="empty-state">No journal entries yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h2>Chronological Journal Entries</h2>
+          </div>
+          <div class="table-container">
+            <table class="table" id="table-ledger-entries">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Type</th>
+                  <th>Account</th>
+                  <th>Debit</th>
+                  <th>Credit</th>
+                  <th>Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="6" class="empty-state">No entries yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 5: WEBHOOK SIMULATOR -->
+      <section id="tab-simulator" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2>Stripe Webhook Event Generator</h2>
+          </div>
+          <p class="text-muted" style="margin-bottom: 20px;">
+            Simulate realistic Stripe webhook dispatches to test signature verification, idempotency deduplication, and downstream database mutations.
+          </p>
+
+          <form id="simulator-form" class="form-grid">
+            <div class="form-group">
+              <label for="sim-event-type">Event Type</label>
+              <select id="sim-event-type" class="form-control">
+                <option value="checkout.session.completed">checkout.session.completed (User Checkout Complete)</option>
+                <option value="invoice.paid">invoice.paid (Subscription Invoice Settled)</option>
+                <option value="customer.subscription.updated">customer.subscription.updated (Tier / Renew Cycle Change)</option>
+                <option value="customer.subscription.deleted">customer.subscription.deleted (Subscription Canceled)</option>
+                <option value="payment_intent.succeeded">payment_intent.succeeded (One-Time Payment Succeeded)</option>
+                <option value="charge.refunded">charge.refunded (Customer Refund Issued)</option>
+                <option value="payout.paid">payout.paid (Bank Payout Settled)</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="sim-user">Target User</label>
+              <select id="sim-user" class="form-control">
+                <!-- Dynamically populated -->
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label for="sim-amount">Amount (cents, e.g. 4900 = $49.00)</label>
+              <input type="number" id="sim-amount" class="form-control" value="4900" step="100">
+            </div>
+
+            <div class="form-group">
+              <label for="sim-currency">Currency</label>
+              <select id="sim-currency" class="form-control">
+                <option value="usd">USD ($)</option>
+                <option value="eur">EUR (€)</option>
+                <option value="gbp">GBP (£)</option>
+              </select>
+            </div>
+
+            <div class="form-actions" style="grid-column: 1 / -1;">
+              <button type="submit" class="btn btn-primary" id="btn-dispatch-sim">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                Dispatch Simulated Event
+              </button>
+            </div>
+          </form>
+
+          <div id="sim-response-card" class="code-box hidden" style="margin-top: 24px;">
+            <div class="code-header">Response Payload</div>
+            <pre><code id="sim-response-code"></code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- TAB 6: INTEGRATION GUIDE -->
+      <section id="tab-integration" class="tab-pane">
+        <div class="card">
+          <div class="card-header">
+            <h2>Stripe CLI Integration & Webhook Forwarding</h2>
+          </div>
+          <div class="guide-content">
+            <p>To connect your local external system to real Stripe test events dispatched from your Stripe dashboard:</p>
+
+            <h3>1. Install & Login with Stripe CLI</h3>
+            <pre class="code-block"><code># Install via Scoop (Windows) or download stripe.exe
+scoop bucket add stripe https://github.com/stripe/stripe-cli.git
+scoop install stripe
+
+# Log into your Stripe account
+stripe login</code></pre>
+
+            <h3>2. Forward Events to This External System</h3>
+            <p>Run the forwarder in a terminal window. It will capture events from Stripe and forward them directly to your raw webhook receiver:</p>
+            <pre class="code-block"><code>stripe listen --forward-to localhost:3000/api/webhooks</code></pre>
+
+            <h3>3. Configure Webhook Secret in .env</h3>
+            <p>The CLI will output: <code>Your webhook signing secret is whsec_...</code></p>
+            <p>Copy that secret into your <code>.env</code> file:</p>
+            <pre class="code-block"><code>STRIPE_SECRET_KEY=sk_test_51...
+STRIPE_WEBHOOK_SECRET=whsec_...</code></pre>
+
+            <h3>4. Trigger Test Events via CLI</h3>
+            <pre class="code-block"><code># Trigger checkout session
+stripe trigger checkout.session.completed
+
+# Trigger subscription created
+stripe trigger customer.subscription.created
+
+# Trigger invoice payment
+stripe trigger invoice.paid</code></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Event Detail Modal -->
+  <div id="modal-event" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeModal()"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-event-title">Event Detail</h3>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <pre><code id="modal-event-json"></code></pre>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+        <button class="btn btn-primary" id="btn-modal-replay">Replay Event</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Checkout Demo Modal -->
+  <div id="modal-checkout" class="modal hidden">
+    <div class="modal-backdrop" onclick="closeCheckoutModal()"></div>
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3>Create Test Checkout Session</h3>
+        <button class="modal-close" onclick="closeCheckoutModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group" style="margin-bottom: 16px;">
+          <label>Select Subscription Tier</label>
+          <div class="tier-selector" id="checkout-tier-list">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Target User</label>
+          <select id="checkout-user-select" class="form-control"></select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeCheckoutModal()">Cancel</button>
+        <button class="btn btn-primary" id="btn-submit-checkout">Launch Checkout</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
