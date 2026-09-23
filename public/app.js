@@ -41,6 +41,7 @@ function switchTab(tabId) {
     integration: 'Stripe CLI & Webhook Setup Guide',
   };
   document.getElementById('page-title').textContent = titles[tabId] || 'Stripe External System';
+  closeMobileSidebar();
 }
 
 document.querySelectorAll('.nav-item').forEach(btn => {
@@ -921,6 +922,27 @@ function checkUrlParameters() {
     showAlert('Checkout was canceled.', 'warning');
     window.history.replaceState({}, document.title, window.location.pathname);
   }
+}
+
+// Mobile Sidebar Drawer Toggle
+const btnToggleSidebar = document.getElementById('btn-toggle-sidebar');
+const sidebar = document.querySelector('.sidebar');
+const sidebarBackdrop = document.getElementById('sidebar-backdrop');
+
+function closeMobileSidebar() {
+  if (sidebar) sidebar.classList.remove('open');
+  if (sidebarBackdrop) sidebarBackdrop.classList.remove('active');
+}
+
+if (btnToggleSidebar) {
+  btnToggleSidebar.addEventListener('click', () => {
+    if (sidebar) sidebar.classList.toggle('open');
+    if (sidebarBackdrop) sidebarBackdrop.classList.toggle('active');
+  });
+}
+
+if (sidebarBackdrop) {
+  sidebarBackdrop.addEventListener('click', closeMobileSidebar);
 }
 
 // Refresh button
